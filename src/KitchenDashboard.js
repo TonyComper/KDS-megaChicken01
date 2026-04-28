@@ -15,8 +15,8 @@ export default function KitchenDashboard() {
   const alarmAudio = useRef(null);
   const messageAudio = useRef(null);
 
-  // ✅ Location filter (Delicacies Gourmet)
-  const LOCATION_ID = 'DELGMT';
+  // ✅ Location filter (Mega Chicken)
+  const LOCATION_ID = 'MEGCHK';
 
   const isChrome = () => {
     const userAgent = navigator.userAgent;
@@ -295,7 +295,7 @@ export default function KitchenDashboard() {
             ${totalBlock}
 
             <div class="hr"></div>
-            <div class="footer">© 2026 Avaiaconnects.com</div>
+            <div class="footer">© 2026 HeySue!</div>
           </div>
         </body>
       </html>
@@ -480,7 +480,7 @@ export default function KitchenDashboard() {
       <div style={{ padding: '2rem', textAlign: 'center' }}>
         <h1>Orders and Messages Dashboard</h1>
         <p>Please click the button below to start the dashboard and enable sound alerts.</p>
-        <p>(c) 2026 AvaiaConnects.com - All rights reserved.</p>
+        <p>(c) 2026 HeySue! - All rights reserved.</p>
         <button
           onClick={async () => {
             try {
@@ -524,7 +524,7 @@ export default function KitchenDashboard() {
 
   return (
     <div style={{ padding: '1rem', fontFamily: 'Arial' }}>
-      <h1>Orders and Messages - Delicacies Gourmet</h1>
+      <h1>Orders and Messages - Mega Chicken Burlington</h1>
       <p>
         <strong>Date:</strong>{' '}
         {today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
