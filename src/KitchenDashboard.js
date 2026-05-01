@@ -949,7 +949,8 @@ export default function KitchenDashboard() {
               <strong>Total:</strong> {order['Total Price']}
             </p>
 
-            {String(order['Order Type'] || '').toUpperCase() === 'PICK UP' && (
+            {String(order['Order Type'] || '').toUpperCase() === 'PICK UP' &&
+            String(order.paymentMethod || '').toUpperCase() === 'CREDIT/DEBIT' && (
               <div
                 style={{
                   marginTop: '1rem',
