@@ -84,13 +84,15 @@ const isCreditDebitOrder = (order) => {
         })
       });
 
-      const payload = {
-        orderID: order.id,
-        orderId: order.id,
-        totalPrice,
-        orderDetails,
-        phoneNumber
-      };
+    const payload = {
+        orderID: order['Order ID'] || order.id,
+        orderId: order['Order ID'] || order.id,
+        firebaseOrderId: order.id,
+        totalPrice: totalPrice,
+        orderDetails: orderDetails,
+        phoneNumber: phoneNumber,
+        locationID: order.locationID || LOCATION_ID
+    };
 
       const res = await fetch(CREATE_CHECKOUT_LINK_URL, {
         method: 'POST',
