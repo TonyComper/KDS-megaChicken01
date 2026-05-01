@@ -14,6 +14,8 @@ export default function KitchenDashboard() {
   const [now, setNow] = useState(Date.now());
   const [adjustedTotals, setAdjustedTotals] = useState({});
   const [sendingPaymentLinks, setSendingPaymentLinks] = useState({});
+  const [confirmOrder, setConfirmOrder] = useState(null);
+
   const alarmAudio = useRef(null);
   const messageAudio = useRef(null);
 
@@ -26,12 +28,12 @@ export default function KitchenDashboard() {
     return value === undefined || value === null || String(value).trim() === '';
   };
 
-const isCreditDebitOrder = (order) => {
-  const orderType = String(order?.['Order Type'] || '').toUpperCase().trim();
-  const paymentMethod = String(order?.paymentMethod || '').toUpperCase().trim();
+  const isCreditDebitOrder = (order) => {
+    const orderType = String(order?.['Order Type'] || '').toUpperCase().trim();
+    const paymentMethod = String(order?.paymentMethod || '').toUpperCase().trim();
 
-  return orderType === 'PICK UP' && paymentMethod === 'CREDIT/DEBIT';
-};
+    return orderType === 'PICK UP' && paymentMethod === 'CREDIT/DEBIT';
+  };
 
   const parseMoneyValue = (value) => {
     const cleaned = String(value ?? '').replace(/[^0-9.]/g, '');
@@ -43,7 +45,18 @@ const isCreditDebitOrder = (order) => {
     return adjustedTotals[order.id] ?? order['Total Price'] ?? '';
   };
 
-  const sendPaymentLink = async (order) => {
+  const getOrderAlertKey = (order) => {
+    return [
+      order.id || '',
+      order['Order ID'] || '',
+      order['Order Date'] || '',
+      order['Customer Contact Number'] || '',
+      order['Order Items'] || '',
+      order['Total Price'] || ''
+    ].join('|');
+  };
+
+  const sendPaymentLink = async (order, skipConfirm = false) => {
     try {
       if (!isCreditDebitOrder(order)) {
         alert('Only PICK UP orders with CREDIT/DEBIT can send payment links.');
@@ -54,7 +67,12 @@ const isCreditDebitOrder = (order) => {
       const totalPrice = parseMoneyValue(totalInput);
 
       if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
-        alert('Please enter a valid total price before sending the payment link.');
+        alert('Total must be greater than $0.00');
+        return;
+      }
+
+      if (totalPrice < 0.5) {
+        alert('Total must be at least $0.50');
         return;
       }
 
@@ -71,6 +89,11 @@ const isCreditDebitOrder = (order) => {
         return;
       }
 
+      if (!skipConfirm) {
+        setConfirmOrder({ order, totalPrice });
+        return;
+      }
+
       setSendingPaymentLinks((prev) => ({ ...prev, [order.id]: true }));
 
       await fetch(`${FIREBASE_ORDERS_URL}/${order.id}.json`, {
@@ -84,15 +107,15 @@ const isCreditDebitOrder = (order) => {
         })
       });
 
-    const payload = {
+      const payload = {
         orderID: order['Order ID'] || order.id,
         orderId: order['Order ID'] || order.id,
         firebaseOrderId: order.id,
-        totalPrice: totalPrice,
-        orderDetails: orderDetails,
-        phoneNumber: phoneNumber,
+        totalPrice,
+        orderDetails,
+        phoneNumber,
         locationID: order.locationID || LOCATION_ID
-    };
+      };
 
       const res = await fetch(CREATE_CHECKOUT_LINK_URL, {
         method: 'POST',
@@ -132,8 +155,8 @@ const isCreditDebitOrder = (order) => {
           paymentLinkSent: true,
           paymentLinkStatus: 'sent',
           paymentLinkSentAt: new Date().toISOString(),
-          checkoutSessionId: result?.checkoutSessionId || result?.sessionId || order.checkoutSessionId || null,
-          checkoutUrl: result?.checkoutUrl || result?.url || order.checkoutUrl || null
+          checkoutSessionId: result?.checkoutSessionId || result?.sessionId || order.checkoutSessionId || '',
+          checkoutUrl: result?.checkoutUrl || result?.url || order.checkoutUrl || ''
         })
       });
 
@@ -146,7 +169,9 @@ const isCreditDebitOrder = (order) => {
                 status: 'pending',
                 paymentLinkSent: true,
                 paymentLinkStatus: 'sent',
-                paymentLinkSentAt: new Date().toISOString()
+                paymentLinkSentAt: new Date().toISOString(),
+                checkoutSessionId: result?.checkoutSessionId || result?.sessionId || item.checkoutSessionId || '',
+                checkoutUrl: result?.checkoutUrl || result?.url || item.checkoutUrl || ''
               }
             : item
         )
@@ -572,40 +597,29 @@ const isCreditDebitOrder = (order) => {
 
         setOrders(orderArray);
 
-const getOrderAlertKey = (order) => {
-  return [
-    order.id || '',
-    order['Order ID'] || '',
-    order['Order Date'] || '',
-    order['Customer Contact Number'] || '',
-    order['Order Items'] || '',
-    order['Total Price'] || ''
-  ].join('|');
-};
+        const newUnseenOrder = orderArray.find((order) => {
+          if (order['Order Type'] === 'MESSAGE') return false;
+          if (!order['Order Items']) return false;
 
-const newUnseenOrder = orderArray.find((order) => {
-  if (order['Order Type'] === 'MESSAGE') return false;
-  if (!order['Order Items']) return false;
+          const alertKey = getOrderAlertKey(order);
 
-  const alertKey = getOrderAlertKey(order);
+          return !seenOrders.has(alertKey);
+        });
 
-  return !seenOrders.has(alertKey);
-});
+        if (newUnseenOrder) {
+          const alertKey = getOrderAlertKey(newUnseenOrder);
 
-if (newUnseenOrder) {
-  const alertKey = getOrderAlertKey(newUnseenOrder);
+          setSeenOrders((prev) => {
+            const updated = new Set(prev).add(alertKey);
+            localStorage.setItem('seenOrders', JSON.stringify(Array.from(updated)));
+            return updated;
+          });
 
-  setSeenOrders((prev) => {
-    const updated = new Set(prev).add(alertKey);
-    localStorage.setItem('seenOrders', JSON.stringify(Array.from(updated)));
-    return updated;
-  });
-
-  if (alarmAudio.current) {
-    alarmAudio.current.currentTime = 0;
-    alarmAudio.current.play().catch((err) => console.warn('❌ alert.mp3 playback failed', err));
-  }
-}
+          if (alarmAudio.current) {
+            alarmAudio.current.currentTime = 0;
+            alarmAudio.current.play().catch((err) => console.warn('❌ alert.mp3 playback failed', err));
+          }
+        }
 
         const newUnseenMessage = orderArray.find(
           (order) => order['Order Type'] === 'MESSAGE' && !seenMessages.has(order.id)
@@ -767,6 +781,25 @@ if (newUnseenOrder) {
         {showArchived ? 'Hide Archived' : 'Archived'}
       </button>
 
+      <button
+        onClick={() => {
+          if (alarmAudio.current) {
+            alarmAudio.current.currentTime = 0;
+            alarmAudio.current.play().catch((err) => console.warn('Alert test failed', err));
+          }
+        }}
+        style={{
+          backgroundColor: '#ff9800',
+          color: 'white',
+          padding: '0.5rem 1rem',
+          marginLeft: '1rem',
+          border: 'none',
+          borderRadius: '4px'
+        }}
+      >
+        Test Order Alert
+      </button>
+
       {displayedMessages.map((message) => (
         <div
           key={message.id}
@@ -870,6 +903,10 @@ if (newUnseenOrder) {
               <strong>Order Type:</strong> {order['Order Type'] || 'N/A'}
             </p>
 
+            <p>
+              <strong>Payment Method:</strong> {order.paymentMethod || 'N/A'}
+            </p>
+
             {order['Order Type']?.toLowerCase() === 'delivery' && (
               <>
                 <p>
@@ -956,8 +993,7 @@ if (newUnseenOrder) {
               <strong>Total:</strong> {order['Total Price']}
             </p>
 
-            {String(order['Order Type'] || '').toUpperCase() === 'PICK UP' &&
-            String(order.paymentMethod || '').toUpperCase() === 'CREDIT/DEBIT' && (
+            {isCreditDebitOrder(order) && (
               <div
                 style={{
                   marginTop: '1rem',
@@ -995,9 +1031,18 @@ if (newUnseenOrder) {
 
                 <button
                   onClick={() => sendPaymentLink(order)}
-                  disabled={!!sendingPaymentLinks[order.id]}
+                  disabled={
+                    !!sendingPaymentLinks[order.id] ||
+                    !Number.isFinite(parseMoneyValue(getEditableTotal(order))) ||
+                    parseMoneyValue(getEditableTotal(order)) <= 0
+                  }
                   style={{
-                    backgroundColor: sendingPaymentLinks[order.id] ? '#6c757d' : '#007bff',
+                    backgroundColor:
+                      !!sendingPaymentLinks[order.id] ||
+                      !Number.isFinite(parseMoneyValue(getEditableTotal(order))) ||
+                      parseMoneyValue(getEditableTotal(order)) <= 0
+                        ? '#6c757d'
+                        : '#007bff',
                     color: 'white',
                     padding: '0.6rem 1rem',
                     border: 'none',
@@ -1105,6 +1150,10 @@ if (newUnseenOrder) {
                       <strong>Order Type:</strong> {entry['Order Type']}
                     </p>
 
+                    <p>
+                      <strong>Payment Method:</strong> {entry.paymentMethod || 'N/A'}
+                    </p>
+
                     {entry['Order Type']?.toLowerCase() === 'delivery' && (
                       <>
                         <p>
@@ -1156,6 +1205,87 @@ if (newUnseenOrder) {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {confirmOrder && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 9999
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              padding: '2rem',
+              borderRadius: '14px',
+              width: '90%',
+              maxWidth: '600px',
+              textAlign: 'center',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.35)'
+            }}
+          >
+            <h2 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Confirm Payment Link</h2>
+
+            <p style={{ fontSize: '1.4rem', marginBottom: '1rem' }}>Send payment link for:</p>
+
+            <p style={{ fontSize: '2.4rem', fontWeight: 'bold', marginBottom: '1rem', color: '#28a745' }}>
+              ${confirmOrder.totalPrice.toFixed(2)}
+            </p>
+
+            <p style={{ fontSize: '1.3rem', marginBottom: '0.5rem' }}>
+              <strong>Customer:</strong> {confirmOrder.order['Customer Name'] || 'N/A'}
+            </p>
+
+            <p style={{ fontSize: '1.3rem', marginBottom: '2rem' }}>
+              <strong>Phone:</strong> {confirmOrder.order['Customer Contact Number'] || 'N/A'}
+            </p>
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+              <button
+                onClick={() => setConfirmOrder(null)}
+                style={{
+                  padding: '1rem 2rem',
+                  fontSize: '1.3rem',
+                  backgroundColor: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  minWidth: '160px'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={() => {
+                  const selected = confirmOrder.order;
+                  setConfirmOrder(null);
+                  sendPaymentLink(selected, true);
+                }}
+                style={{
+                  padding: '1rem 2rem',
+                  fontSize: '1.3rem',
+                  backgroundColor: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  minWidth: '220px'
+                }}
+              >
+                Confirm & Send
+              </button>
+            </div>
           </div>
         </div>
       )}
