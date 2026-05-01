@@ -26,21 +26,12 @@ export default function KitchenDashboard() {
     return value === undefined || value === null || String(value).trim() === '';
   };
 
-  const isCreditDebitOrder = (order) => {
-    const type = String(order?.['Order Type'] || '').toLowerCase().trim();
+const isCreditDebitOrder = (order) => {
+  const orderType = String(order?.['Order Type'] || '').toUpperCase().trim();
+  const paymentMethod = String(order?.paymentMethod || '').toUpperCase().trim();
 
-    return (
-      type === 'credit' ||
-      type === 'debit' ||
-      type === 'credit/debit' ||
-      type === 'credit debit' ||
-      type === 'credit card' ||
-      type === 'debit card' ||
-      type.includes('credit/debit') ||
-      type.includes('credit') ||
-      type.includes('debit')
-    );
-  };
+  return orderType === 'PICK UP' && paymentMethod === 'CREDIT/DEBIT';
+};
 
   const parseMoneyValue = (value) => {
     const cleaned = String(value ?? '').replace(/[^0-9.]/g, '');
@@ -55,7 +46,7 @@ export default function KitchenDashboard() {
   const sendPaymentLink = async (order) => {
     try {
       if (!isCreditDebitOrder(order)) {
-        alert('Payment links can only be sent for credit/debit order types.');
+        alert('Only PICK UP orders with CREDIT/DEBIT can send payment links.');
         return;
       }
 
