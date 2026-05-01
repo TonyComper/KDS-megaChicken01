@@ -15,51 +15,83 @@ export default function KitchenDashboard() {
   const alarmAudio = useRef(null);
   const messageAudio = useRef(null);
 
-  // ✅ Location filter (Mega Chicken)
   const LOCATION_ID = 'MEGCHK';
+  const FIREBASE_ORDERS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/orders';
+  const FIREBASE_ARCHIVE_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/archive';
+
+  const isBlank = (value) => {
+    return value === undefined || value === null || String(value).trim() === '';
+  };
+
+  const isInvalidOrder = (entry) => {
+    if (!entry) return true;
+    if (entry['Order Type'] === 'MESSAGE') return false;
+
+    const orderNumber = entry['Order ID'];
+    const phoneNumber = entry['Customer Contact Number'];
+
+    return isBlank(orderNumber) || isBlank(phoneNumber);
+  };
+
+  const deleteInvalidOrderFromFirebase = async (id, entry) => {
+    try {
+      await fetch(`${FIREBASE_ORDERS_URL}/${id}.json`, {
+        method: 'DELETE'
+      });
+
+      console.warn('🗑️ Deleted invalid order from Firebase:', {
+        id,
+        orderId: entry?.['Order ID'],
+        phone: entry?.['Customer Contact Number']
+      });
+    } catch (err) {
+      console.warn(`❌ Failed to delete invalid order ${id}:`, err);
+    }
+  };
 
   const isChrome = () => {
     const userAgent = navigator.userAgent;
     return /Chrome/.test(userAgent) && !/Edge|Edg|OPR|Brave|Chromium/.test(userAgent);
   };
 
-  // ✅ FIX: normalize date string for ALL browsers (Safari too)
   const formatDate = (rawDateStr) => {
     if (!rawDateStr) return '';
 
-    // If a Date object is passed, handle it directly
     if (rawDateStr instanceof Date) {
       const d = rawDateStr;
-      return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+      return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d
+        .getDate()
+        .toString()
+        .padStart(2, '0')}`;
     }
 
     let cleanStr = String(rawDateStr);
-
-    // Normalize " at " and remove timezone parentheses across all browsers
     cleanStr = cleanStr.replace(/\s+at\s+/i, ' ').replace(/\s*\([^)]*\)/g, '').trim();
 
     const d = new Date(cleanStr);
     if (isNaN(d)) return 'Invalid date';
-    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+
+    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d
+      .getDate()
+      .toString()
+      .padStart(2, '0')}`;
   };
 
   const getElapsedTime = (rawDateStr) => {
     if (!rawDateStr) return 'Invalid date';
 
-    // ✅ FIX: normalize for ALL browsers (Safari too)
     let cleanStr = String(rawDateStr).replace(/\s+at\s+/i, ' ').replace(/\s*\([^)]*\)/g, '').trim();
 
     const orderDate = new Date(cleanStr);
     if (isNaN(orderDate)) return 'Invalid date';
+
     const elapsed = now - orderDate;
     const minutes = Math.floor(elapsed / 60000);
     const seconds = Math.floor((elapsed % 60000) / 1000);
+
     return `${minutes}m ${seconds}s ago`;
   };
 
-  // =========================
-  // ✅ PRINTING (receipt)
-  // =========================
   const escapeHtml = (s) => {
     return String(s ?? '')
       .replace(/&/g, '&amp;')
@@ -69,13 +101,14 @@ export default function KitchenDashboard() {
       .replace(/'/g, '&#039;');
   };
 
-  // Friendly pickup status mapping for receipts
   const buildPickupStatusLine = (order) => {
     const status = (order?.status || '').toUpperCase().trim();
+
     if (!status || status === 'N/A' || status === 'NOT PAID') return 'NOT PAID';
     if (status === 'PENDING') return 'PENDING (Customer paying)';
     if (status === 'PAID') return 'PAID';
     if (status === 'CANCELED' || status === 'FAILED') return 'PAYMENT FAILED';
+
     return status;
   };
 
@@ -96,15 +129,14 @@ export default function KitchenDashboard() {
     const instructions = escapeHtml(entry?.['Order Instructions']);
     const reason = escapeHtml(entry?.['Message_Reason']);
 
-    // ✅ Fees (support either key style)
     const serviceFeeRaw = entry?.serviceFee ?? entry?.['Service Fee'];
     const deliveryFeeRaw = entry?.deliveryFee ?? entry?.['Delivery Fee'];
+
     const serviceFee = escapeHtml(serviceFeeRaw !== undefined && serviceFeeRaw !== null ? String(serviceFeeRaw) : '');
     const deliveryFee = escapeHtml(deliveryFeeRaw !== undefined && deliveryFeeRaw !== null ? String(deliveryFeeRaw) : '');
 
     const total = escapeHtml(entry?.['Total Price']);
 
-    // ✅ STATUS (under Order # for both PICK UP + DELIVERY)
     const rawStatus = (entry?.status ?? entry?.Status ?? '').toString().trim();
     const statusText = isMessage
       ? 'N/A'
@@ -113,6 +145,7 @@ export default function KitchenDashboard() {
       : rawStatus
       ? rawStatus.toUpperCase()
       : 'N/A';
+
     const status = escapeHtml(statusText);
 
     const items = (entry?.['Order Items'] || '')
@@ -160,7 +193,6 @@ export default function KitchenDashboard() {
         `
         : '';
 
-    // ✅ Fees BEFORE Total
     const feesBlock =
       !isMessage
         ? `
@@ -181,7 +213,7 @@ export default function KitchenDashboard() {
         `
         : '';
 
-    const html = `
+    return `
       <!doctype html>
       <html>
         <head>
@@ -196,9 +228,7 @@ export default function KitchenDashboard() {
               color: #000;
             }
 
-            /* Strict 58mm-safe width */
             .receipt { width: 220px; }
-
             .center { text-align: center; }
             .hr { border-top: 1px dashed #000; margin: 8px 0; }
 
@@ -214,7 +244,6 @@ export default function KitchenDashboard() {
               margin-top: 6px;
             }
 
-            /* ✅ STATUS line under Order # */
             .statusBig {
               font-size: 13px;
               font-weight: 900;
@@ -251,7 +280,6 @@ export default function KitchenDashboard() {
               font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
             }
 
-            /* Ensure long lines wrap safely on 58mm */
             .wrap, .item, .mono {
               word-wrap: break-word;
               overflow-wrap: anywhere;
@@ -266,7 +294,6 @@ export default function KitchenDashboard() {
         </head>
         <body onload="window.print(); setTimeout(()=>window.close(), 300);">
           <div class="receipt">
-
             <div class="center title">${escapeHtml(title)}</div>
 
             <div class="center orderNo">${escapeHtml(orderNumberLine)}</div>
@@ -300,18 +327,18 @@ export default function KitchenDashboard() {
         </body>
       </html>
     `;
-
-    return html;
   };
 
   const printEntry = (entry) => {
     try {
       const html = buildReceiptHtml(entry);
       const w = window.open('', '_blank', 'width=400,height=600');
+
       if (!w) {
         alert('Pop-up blocked. Please allow pop-ups to print.');
         return;
       }
+
       w.document.open();
       w.document.write(html);
       w.document.close();
@@ -321,26 +348,27 @@ export default function KitchenDashboard() {
     }
   };
 
-  // =========================
-  // ✅ ARCHIVING
-  // =========================
   const archiveOldOrders = async () => {
-    const res = await fetch('https://privitipizza41-default-rtdb.firebaseio.com/orders.json');
+    const res = await fetch(`${FIREBASE_ORDERS_URL}.json`);
     const data = await res.json();
+
     if (!data) return;
 
-    // ✅ FIX: compute today using Date object
     const todayStr = formatDate(new Date());
 
     for (const [id, entry] of Object.entries(data)) {
       if (entry?.locationID !== LOCATION_ID) continue;
+
+      if (isInvalidOrder(entry)) {
+        await deleteInvalidOrderFromFirebase(id, entry);
+        continue;
+      }
 
       const rawDate = entry['Order Date'] || entry['Message Date'];
       if (!rawDate) continue;
 
       const entryDateStr = formatDate(rawDate);
 
-      // ✅ EXTRA SAFETY: if date can't be parsed, do NOT archive/delete
       if (entryDateStr === 'Invalid date') {
         console.warn(`⚠️ Skipping archive for ${id} because date could not be parsed:`, rawDate);
         continue;
@@ -348,17 +376,18 @@ export default function KitchenDashboard() {
 
       if (entryDateStr === todayStr) continue;
 
-      const archiveCheck = await fetch(`https://privitipizza41-default-rtdb.firebaseio.com/archive/${entryDateStr}/${id}.json`);
+      const archiveCheck = await fetch(`${FIREBASE_ARCHIVE_URL}/${entryDateStr}/${id}.json`);
       const alreadyArchived = await archiveCheck.json();
+
       if (alreadyArchived) continue;
 
-      await fetch(`https://privitipizza41-default-rtdb.firebaseio.com/archive/${entryDateStr}/${id}.json`, {
+      await fetch(`${FIREBASE_ARCHIVE_URL}/${entryDateStr}/${id}.json`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...entry, Archived: true })
       });
 
-      await fetch(`https://privitipizza41-default-rtdb.firebaseio.com/orders/${id}.json`, {
+      await fetch(`${FIREBASE_ORDERS_URL}/${id}.json`, {
         method: 'DELETE'
       });
 
@@ -366,12 +395,10 @@ export default function KitchenDashboard() {
     }
   };
 
-  // =========================
-  // ✅ AUDIO INIT
-  // =========================
   useEffect(() => {
     alarmAudio.current = new Audio('/alert.mp3');
     alarmAudio.current.load();
+
     messageAudio.current = new Audio('/message-alert.mp3');
     messageAudio.current.load();
 
@@ -384,80 +411,92 @@ export default function KitchenDashboard() {
     return () => clearInterval(timer);
   }, []);
 
-  // =========================
-  // ✅ FETCH LOOP
-  // =========================
   useEffect(() => {
     if (!audioEnabled) return;
 
     const fetchOrders = async () => {
-      const res = await fetch('https://privitipizza41-default-rtdb.firebaseio.com/orders.json');
-      const data = await res.json();
+      try {
+        const res = await fetch(`${FIREBASE_ORDERS_URL}.json`);
+        const data = await res.json();
 
-      let orderArray = Object.entries(data || {}).map(([id, order]) => ({ id, ...order }));
-      orderArray = orderArray.filter((o) => o?.locationID === LOCATION_ID);
+        const rawEntries = Object.entries(data || {})
+          .map(([id, order]) => ({ id, ...order }))
+          .filter((o) => o?.locationID === LOCATION_ID);
 
-      orderArray.sort(
-        (a, b) =>
-          new Date(formatDate(b['Order Date'] || b['Message Date'])) -
-          new Date(formatDate(a['Order Date'] || a['Message Date']))
-      );
+        const invalidOrders = rawEntries.filter((order) => isInvalidOrder(order));
 
-      setOrders(orderArray);
-
-      const newUnseenOrder = orderArray.find(
-        (order) =>
-          !seenOrders.has(order.id) &&
-          !accepted.has(order.id) &&
-          order['Order Type'] !== 'MESSAGE' &&
-          order['Order Items']
-      );
-
-      if (newUnseenOrder) {
-        setSeenOrders((prev) => {
-          const updated = new Set(prev).add(newUnseenOrder.id);
-          localStorage.setItem('seenOrders', JSON.stringify(Array.from(updated)));
-          return updated;
-        });
-
-        if (alarmAudio.current) {
-          alarmAudio.current.currentTime = 0;
-          alarmAudio.current.play().catch((err) => console.warn('❌ alert.mp3 playback failed', err));
+        if (invalidOrders.length > 0) {
+          await Promise.all(invalidOrders.map((order) => deleteInvalidOrderFromFirebase(order.id, order)));
         }
-      }
 
-      const newUnseenMessage = orderArray.find((order) => order['Order Type'] === 'MESSAGE' && !seenMessages.has(order.id));
+        let orderArray = rawEntries.filter((order) => !isInvalidOrder(order));
 
-      if (newUnseenMessage) {
-        setSeenMessages((prev) => {
-          const updated = new Set(prev).add(newUnseenMessage.id);
-          localStorage.setItem('seenMessages', JSON.stringify(Array.from(updated)));
-          return updated;
-        });
+        orderArray.sort(
+          (a, b) =>
+            new Date(formatDate(b['Order Date'] || b['Message Date'])) -
+            new Date(formatDate(a['Order Date'] || a['Message Date']))
+        );
 
-        if (messageAudio.current) {
-          messageAudio.current.currentTime = 0;
-          messageAudio.current.play().catch((err) => console.warn('❌ message-alert.mp3 playback failed', err));
+        setOrders(orderArray);
+
+        const newUnseenOrder = orderArray.find(
+          (order) =>
+            !seenOrders.has(order.id) &&
+            !accepted.has(order.id) &&
+            order['Order Type'] !== 'MESSAGE' &&
+            order['Order Items']
+        );
+
+        if (newUnseenOrder) {
+          setSeenOrders((prev) => {
+            const updated = new Set(prev).add(newUnseenOrder.id);
+            localStorage.setItem('seenOrders', JSON.stringify(Array.from(updated)));
+            return updated;
+          });
+
+          if (alarmAudio.current) {
+            alarmAudio.current.currentTime = 0;
+            alarmAudio.current.play().catch((err) => console.warn('❌ alert.mp3 playback failed', err));
+          }
         }
+
+        const newUnseenMessage = orderArray.find(
+          (order) => order['Order Type'] === 'MESSAGE' && !seenMessages.has(order.id)
+        );
+
+        if (newUnseenMessage) {
+          setSeenMessages((prev) => {
+            const updated = new Set(prev).add(newUnseenMessage.id);
+            localStorage.setItem('seenMessages', JSON.stringify(Array.from(updated)));
+            return updated;
+          });
+
+          if (messageAudio.current) {
+            messageAudio.current.currentTime = 0;
+            messageAudio.current.play().catch((err) => console.warn('❌ message-alert.mp3 playback failed', err));
+          }
+        }
+      } catch (err) {
+        console.warn('❌ Failed to fetch orders:', err);
       }
     };
 
     fetchOrders();
+
     const interval = setInterval(fetchOrders, 5000);
     return () => clearInterval(interval);
   }, [audioEnabled, accepted, seenOrders, seenMessages]);
 
-  // =========================
-  // ✅ ACTIONS
-  // =========================
   const acceptOrder = async (id) => {
     const timestamp = new Date().toISOString();
+
     setAccepted((prev) => {
       const updated = new Set(prev).add(id);
       localStorage.setItem('acceptedOrders', JSON.stringify(Array.from(updated)));
       return updated;
     });
-    await fetch(`https://privitipizza41-default-rtdb.firebaseio.com/orders/${id}.json`, {
+
+    await fetch(`${FIREBASE_ORDERS_URL}/${id}.json`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 'Accepted At': timestamp })
@@ -472,23 +511,23 @@ export default function KitchenDashboard() {
     });
   };
 
-  // =========================
-  // ✅ START SCREEN
-  // =========================
   if (!audioEnabled) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
         <h1>Orders and Messages Dashboard</h1>
         <p>Please click the button below to start the dashboard and enable sound alerts.</p>
         <p>(c) 2026 HeySue! - All rights reserved.</p>
+
         <button
           onClick={async () => {
             try {
               await archiveOldOrders();
               setAudioEnabled(true);
+
               if (alarmAudio.current) {
                 alarmAudio.current.play().then(() => alarmAudio.current.pause());
               }
+
               if (messageAudio.current) {
                 messageAudio.current.play().then(() => messageAudio.current.pause());
               }
@@ -510,9 +549,10 @@ export default function KitchenDashboard() {
   const displayedOrders = orders.filter((order) => {
     const isAcceptedOrder = accepted.has(order.id);
     const isInDateRange = formatDate(order['Order Date']) === todayStr;
+
     return showAccepted
-      ? isAcceptedOrder && isInDateRange && order['Order Type'] !== 'MESSAGE'
-      : !isAcceptedOrder && isInDateRange && order['Order Type'] !== 'MESSAGE';
+      ? isAcceptedOrder && isInDateRange && order['Order Type'] !== 'MESSAGE' && !isInvalidOrder(order)
+      : !isAcceptedOrder && isInDateRange && order['Order Type'] !== 'MESSAGE' && !isInvalidOrder(order);
   });
 
   const displayedMessages = orders.filter(
@@ -525,12 +565,17 @@ export default function KitchenDashboard() {
   return (
     <div style={{ padding: '1rem', fontFamily: 'Arial' }}>
       <h1>Orders and Messages - Mega Chicken Burlington</h1>
+
       <p>
         <strong>Date:</strong>{' '}
-        {today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        {today.toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        })}
       </p>
 
-      {/* Control buttons */}
       <button
         onClick={() => setShowAccepted((prev) => !prev)}
         style={{ marginRight: '1rem', backgroundColor: 'red', color: 'white', padding: '0.5rem 1rem' }}
@@ -548,21 +593,26 @@ export default function KitchenDashboard() {
       <button
         onClick={async () => {
           if (!showArchived) {
-            const res = await fetch('https://privitipizza41-default-rtdb.firebaseio.com/archive.json');
+            const res = await fetch(`${FIREBASE_ARCHIVE_URL}.json`);
             const data = await res.json();
+
             const allArchived = [];
+
             Object.entries(data || {}).forEach(([dateKey, entries]) => {
               Object.entries(entries || {}).forEach(([id, entry]) => {
-                if (entry?.locationID === LOCATION_ID) {
+                if (entry?.locationID === LOCATION_ID && !isInvalidOrder(entry)) {
                   allArchived.push({ ...entry, id, archiveDate: dateKey });
                 }
               });
             });
+
             allArchived.sort(
               (a, b) => new Date(b['Order Date'] || b['Message Date']) - new Date(a['Order Date'] || a['Message Date'])
             );
+
             setArchivedEntries(allArchived);
           }
+
           setShowArchived((prev) => !prev);
         }}
         style={{ backgroundColor: '#28a745', color: 'white', padding: '0.5rem 1rem', marginLeft: '1rem' }}
@@ -570,7 +620,6 @@ export default function KitchenDashboard() {
         {showArchived ? 'Hide Archived' : 'Archived'}
       </button>
 
-      {/* Messages */}
       {displayedMessages.map((message) => (
         <div
           key={message.id}
@@ -584,6 +633,7 @@ export default function KitchenDashboard() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
             <h2 style={{ margin: 0 }}>📨 {showReadMessages ? 'Read Message' : 'New Message'}</h2>
+
             <button
               onClick={() => printEntry(message)}
               style={{
@@ -601,15 +651,19 @@ export default function KitchenDashboard() {
           <p>
             <strong>Time:</strong> {message['Message Date'] || 'N/A'}
           </p>
+
           <p>
             <strong>Caller Name:</strong> {message['Caller_Name'] || 'N/A'}
           </p>
+
           <p>
             <strong>Caller Phone:</strong> {message['Caller_Phone'] || 'N/A'}
           </p>
+
           <p>
             <strong>Reason:</strong> {message['Message_Reason'] || 'N/A'}
           </p>
+
           {!showReadMessages && (
             <button
               onClick={() => markMessageAsRead(message.id)}
@@ -628,7 +682,6 @@ export default function KitchenDashboard() {
         </div>
       ))}
 
-      {/* Orders */}
       <div style={{ display: 'grid', gap: '1rem', marginTop: '2rem' }}>
         {displayedOrders.map((order) => (
           <div
@@ -643,6 +696,7 @@ export default function KitchenDashboard() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
               <h2 style={{ margin: 0 }}>Order #{order['Order ID']}</h2>
+
               <button
                 onClick={() => printEntry(order)}
                 style={{
@@ -660,24 +714,25 @@ export default function KitchenDashboard() {
             <p>
               <strong>Customer:</strong> {order['Customer Name']}
             </p>
+
             <p>
-              <strong>Phone:</strong> {order['Customer Contact Number'] || 'N/A'}
+              <strong>Phone:</strong> {order['Customer Contact Number']}
             </p>
+
             <p>
               <strong>Order Type:</strong> {order['Order Type'] || 'N/A'}
             </p>
 
-            {/* Delivery details */}
             {order['Order Type']?.toLowerCase() === 'delivery' && (
               <>
                 <p>
                   <strong>Delivery Address:</strong> {order['Delivery Address'] || 'N/A'}
                 </p>
+
                 <p>
                   <strong>Order Instructions:</strong> {order['Order Instructions'] || 'N/A'}
                 </p>
 
-                {/* ✅ FIX: status is stored as "status" in DB */}
                 <p>
                   <strong>Status:</strong> {order.status || order.Status || 'N/A'}
                 </p>
@@ -686,7 +741,6 @@ export default function KitchenDashboard() {
                   <strong>Paid At:</strong> {order.PaidAt || 'N/A'}
                 </p>
 
-                {/* Support both spellings just in case */}
                 <p>
                   <strong>Payment ID:</strong> {order.paymentIntentId || order.paymentIntendId || 'N/A'}
                 </p>
@@ -697,10 +751,10 @@ export default function KitchenDashboard() {
               </>
             )}
 
-            {/* ✅ Status message with color badge for PICK UP orders */}
             {order['Order Type'] === 'PICK UP' &&
               (() => {
                 const status = (order.status || '').toUpperCase().trim();
+
                 let statusMessage = '';
                 let statusColor = 'black';
                 let badge = '⚪';
@@ -733,19 +787,24 @@ export default function KitchenDashboard() {
             <p>
               <strong>Order Date:</strong> {order['Order Date']}
             </p>
+
             {!showAccepted && order['Order Date'] && (
               <p>
-                <strong>Elapsed Time:</strong> <span style={{ color: 'goldenrod' }}>{getElapsedTime(order['Order Date'])}</span>
+                <strong>Elapsed Time:</strong>{' '}
+                <span style={{ color: 'goldenrod' }}>{getElapsedTime(order['Order Date'])}</span>
               </p>
             )}
+
             {showAccepted && order['Accepted At'] && (
               <p style={{ color: 'green', fontWeight: 'bold' }}>
                 <strong>Accepted At:</strong> {new Date(order['Accepted At']).toLocaleString()}
               </p>
             )}
+
             <p style={{ color: 'red', fontWeight: 'bold' }}>
               <strong>Pickup Time:</strong> {order['Pickup Time']}
             </p>
+
             <p>
               <strong>Total:</strong> {order['Total Price']}
             </p>
@@ -775,18 +834,26 @@ export default function KitchenDashboard() {
         ))}
       </div>
 
-      {/* Archived */}
       {showArchived && (
         <div style={{ marginTop: '2rem' }}>
           <h2>📦 Archived Orders & Messages</h2>
+
           <div style={{ display: 'grid', gap: '1rem' }}>
             {archivedEntries.map((entry) => (
               <div
                 key={entry.id}
-                style={{ backgroundColor: '#f0f0f0', border: '1px solid #ccc', padding: '1.5rem', borderRadius: '8px' }}
+                style={{
+                  backgroundColor: '#f0f0f0',
+                  border: '1px solid #ccc',
+                  padding: '1.5rem',
+                  borderRadius: '8px'
+                }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0 }}>{entry['Order Type'] === 'MESSAGE' ? '📨 Message' : `Order #${entry['Order ID'] || entry.id}`}</h3>
+                  <h3 style={{ margin: 0 }}>
+                    {entry['Order Type'] === 'MESSAGE' ? '📨 Message' : `Order #${entry['Order ID'] || entry.id}`}
+                  </h3>
+
                   <button
                     onClick={() => printEntry(entry)}
                     style={{
@@ -810,9 +877,11 @@ export default function KitchenDashboard() {
                     <p>
                       <strong>Caller Name:</strong> {entry['Caller_Name']}
                     </p>
+
                     <p>
                       <strong>Caller Phone:</strong> {entry['Caller_Phone']}
                     </p>
+
                     <p>
                       <strong>Reason:</strong> {entry['Message_Reason']}
                     </p>
@@ -822,9 +891,11 @@ export default function KitchenDashboard() {
                     <p>
                       <strong>Customer:</strong> {entry['Customer Name']}
                     </p>
+
                     <p>
-                      <strong>Phone:</strong> {entry['Customer Contact Number'] || 'N/A'}
+                      <strong>Phone:</strong> {entry['Customer Contact Number']}
                     </p>
+
                     <p>
                       <strong>Order Type:</strong> {entry['Order Type']}
                     </p>
@@ -834,11 +905,11 @@ export default function KitchenDashboard() {
                         <p>
                           <strong>Delivery Address:</strong> {entry['Delivery Address']}
                         </p>
+
                         <p>
                           <strong>Order Instructions:</strong> {entry['Order Instructions'] || 'N/A'}
                         </p>
 
-                        {/* ✅ FIX: status stored as "status" */}
                         <p>
                           <strong>Status:</strong> {entry.status || entry.Status || 'N/A'}
                         </p>
@@ -846,9 +917,11 @@ export default function KitchenDashboard() {
                         <p>
                           <strong>Paid At:</strong> {entry.PaidAt || 'N/A'}
                         </p>
+
                         <p>
                           <strong>Payment ID:</strong> {entry.paymentIntentId || entry.paymentIntendId || 'N/A'}
                         </p>
+
                         <p>
                           <strong>Checkout Session ID:</strong> {entry.checkoutSessionId || 'N/A'}
                         </p>
@@ -864,6 +937,7 @@ export default function KitchenDashboard() {
                     <p>
                       <strong>Pickup Time:</strong> {entry['Pickup Time']}
                     </p>
+
                     <p>
                       <strong>Total:</strong> {entry['Total Price']}
                     </p>
