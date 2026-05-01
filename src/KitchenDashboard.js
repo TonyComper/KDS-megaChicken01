@@ -572,26 +572,40 @@ const isCreditDebitOrder = (order) => {
 
         setOrders(orderArray);
 
-        const newUnseenOrder = orderArray.find(
-          (order) =>
-            !seenOrders.has(order.id) &&
-            !accepted.has(order.id) &&
-            order['Order Type'] !== 'MESSAGE' &&
-            order['Order Items']
-        );
+const getOrderAlertKey = (order) => {
+  return [
+    order.id || '',
+    order['Order ID'] || '',
+    order['Order Date'] || '',
+    order['Customer Contact Number'] || '',
+    order['Order Items'] || '',
+    order['Total Price'] || ''
+  ].join('|');
+};
 
-        if (newUnseenOrder) {
-          setSeenOrders((prev) => {
-            const updated = new Set(prev).add(newUnseenOrder.id);
-            localStorage.setItem('seenOrders', JSON.stringify(Array.from(updated)));
-            return updated;
-          });
+const newUnseenOrder = orderArray.find((order) => {
+  if (order['Order Type'] === 'MESSAGE') return false;
+  if (!order['Order Items']) return false;
 
-          if (alarmAudio.current) {
-            alarmAudio.current.currentTime = 0;
-            alarmAudio.current.play().catch((err) => console.warn('❌ alert.mp3 playback failed', err));
-          }
-        }
+  const alertKey = getOrderAlertKey(order);
+
+  return !seenOrders.has(alertKey);
+});
+
+if (newUnseenOrder) {
+  const alertKey = getOrderAlertKey(newUnseenOrder);
+
+  setSeenOrders((prev) => {
+    const updated = new Set(prev).add(alertKey);
+    localStorage.setItem('seenOrders', JSON.stringify(Array.from(updated)));
+    return updated;
+  });
+
+  if (alarmAudio.current) {
+    alarmAudio.current.currentTime = 0;
+    alarmAudio.current.play().catch((err) => console.warn('❌ alert.mp3 playback failed', err));
+  }
+}
 
         const newUnseenMessage = orderArray.find(
           (order) => order['Order Type'] === 'MESSAGE' && !seenMessages.has(order.id)
