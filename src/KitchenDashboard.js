@@ -12,15 +12,160 @@ export default function KitchenDashboard() {
   const [showArchived, setShowArchived] = useState(false);
   const [archivedEntries, setArchivedEntries] = useState([]);
   const [now, setNow] = useState(Date.now());
+  const [adjustedTotals, setAdjustedTotals] = useState({});
+  const [sendingPaymentLinks, setSendingPaymentLinks] = useState({});
   const alarmAudio = useRef(null);
   const messageAudio = useRef(null);
 
   const LOCATION_ID = 'MEGCHK';
   const FIREBASE_ORDERS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/orders';
   const FIREBASE_ARCHIVE_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/archive';
+  const CREATE_CHECKOUT_LINK_URL = 'https://createcheckoutlink-u6d6o7mcnq-uc.a.run.app/createCheckoutLink';
 
   const isBlank = (value) => {
     return value === undefined || value === null || String(value).trim() === '';
+  };
+
+  const isCreditDebitOrder = (order) => {
+    const type = String(order?.['Order Type'] || '').toLowerCase().trim();
+
+    return (
+      type === 'credit' ||
+      type === 'debit' ||
+      type === 'credit/debit' ||
+      type === 'credit debit' ||
+      type === 'credit card' ||
+      type === 'debit card' ||
+      type.includes('credit/debit') ||
+      type.includes('credit') ||
+      type.includes('debit')
+    );
+  };
+
+  const parseMoneyValue = (value) => {
+    const cleaned = String(value ?? '').replace(/[^0-9.]/g, '');
+    const number = Number(cleaned);
+    return Number.isFinite(number) ? number : NaN;
+  };
+
+  const getEditableTotal = (order) => {
+    return adjustedTotals[order.id] ?? order['Total Price'] ?? '';
+  };
+
+  const sendPaymentLink = async (order) => {
+    try {
+      if (!isCreditDebitOrder(order)) {
+        alert('Payment links can only be sent for credit/debit order types.');
+        return;
+      }
+
+      const totalInput = getEditableTotal(order);
+      const totalPrice = parseMoneyValue(totalInput);
+
+      if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
+        alert('Please enter a valid total price before sending the payment link.');
+        return;
+      }
+
+      const phoneNumber = order['Customer Contact Number'];
+      const orderDetails = order['Order Items'];
+
+      if (isBlank(phoneNumber)) {
+        alert('Customer phone number is missing.');
+        return;
+      }
+
+      if (isBlank(orderDetails)) {
+        alert('Order details are missing.');
+        return;
+      }
+
+      setSendingPaymentLinks((prev) => ({ ...prev, [order.id]: true }));
+
+      await fetch(`${FIREBASE_ORDERS_URL}/${order.id}.json`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          'Total Price': totalPrice,
+          status: 'pending',
+          paymentLinkStatus: 'sending',
+          paymentLinkRequestedAt: new Date().toISOString()
+        })
+      });
+
+      const payload = {
+        orderID: order.id,
+        orderId: order.id,
+        totalPrice,
+        orderDetails,
+        phoneNumber
+      };
+
+      const res = await fetch(CREATE_CHECKOUT_LINK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      let result = {};
+      try {
+        result = await res.json();
+      } catch (e) {
+        result = {};
+      }
+
+      if (!res.ok) {
+        await fetch(`${FIREBASE_ORDERS_URL}/${order.id}.json`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'failed',
+            paymentLinkStatus: 'failed',
+            paymentLinkError: result?.error || result?.message || 'Failed to create payment link',
+            paymentLinkFailedAt: new Date().toISOString()
+          })
+        });
+
+        alert(result?.error || result?.message || 'Failed to send payment link.');
+        return;
+      }
+
+      await fetch(`${FIREBASE_ORDERS_URL}/${order.id}.json`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          'Total Price': totalPrice,
+          status: 'pending',
+          paymentLinkSent: true,
+          paymentLinkStatus: 'sent',
+          paymentLinkSentAt: new Date().toISOString(),
+          checkoutSessionId: result?.checkoutSessionId || result?.sessionId || order.checkoutSessionId || null,
+          checkoutUrl: result?.checkoutUrl || result?.url || order.checkoutUrl || null
+        })
+      });
+
+      setOrders((prev) =>
+        prev.map((item) =>
+          item.id === order.id
+            ? {
+                ...item,
+                'Total Price': totalPrice,
+                status: 'pending',
+                paymentLinkSent: true,
+                paymentLinkStatus: 'sent',
+                paymentLinkSentAt: new Date().toISOString()
+              }
+            : item
+        )
+      );
+
+      alert('Payment link sent successfully.');
+    } catch (err) {
+      console.error('❌ Error sending payment link:', err);
+      alert('Error sending payment link.');
+    } finally {
+      setSendingPaymentLinks((prev) => ({ ...prev, [order.id]: false }));
+    }
   };
 
   const isInvalidOrder = (entry) => {
@@ -47,11 +192,6 @@ export default function KitchenDashboard() {
     } catch (err) {
       console.warn(`❌ Failed to delete invalid order ${id}:`, err);
     }
-  };
-
-  const isChrome = () => {
-    const userAgent = navigator.userAgent;
-    return /Chrome/.test(userAgent) && !/Edge|Edg|OPR|Brave|Chromium/.test(userAgent);
   };
 
   const formatDate = (rawDateStr) => {
@@ -808,6 +948,63 @@ export default function KitchenDashboard() {
             <p>
               <strong>Total:</strong> {order['Total Price']}
             </p>
+
+            {isCreditDebitOrder(order) && (
+              <div
+                style={{
+                  marginTop: '1rem',
+                  marginBottom: '1rem',
+                  padding: '1rem',
+                  backgroundColor: '#fff8dc',
+                  border: '2px solid #f0ad4e',
+                  borderRadius: '8px'
+                }}
+              >
+                <p style={{ marginTop: 0, fontWeight: 'bold' }}>Credit/Debit Payment Link</p>
+
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.4rem' }}>
+                  Adjust Total Before Sending:
+                </label>
+
+                <input
+                  type="text"
+                  value={getEditableTotal(order)}
+                  onChange={(e) =>
+                    setAdjustedTotals((prev) => ({
+                      ...prev,
+                      [order.id]: e.target.value
+                    }))
+                  }
+                  style={{
+                    fontSize: '1.2rem',
+                    padding: '0.5rem',
+                    width: '180px',
+                    marginRight: '1rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px'
+                  }}
+                />
+
+                <button
+                  onClick={() => sendPaymentLink(order)}
+                  disabled={!!sendingPaymentLinks[order.id]}
+                  style={{
+                    backgroundColor: sendingPaymentLinks[order.id] ? '#6c757d' : '#007bff',
+                    color: 'white',
+                    padding: '0.6rem 1rem',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {sendingPaymentLinks[order.id] ? 'SENDING...' : 'SEND PAYMENT LINK'}
+                </button>
+
+                <p style={{ marginBottom: 0, fontSize: '0.95rem' }}>
+                  <strong>Payment Link Status:</strong> {order.paymentLinkStatus || 'Not sent'}
+                </p>
+              </div>
+            )}
 
             <ul>
               {order['Order Items']?.split(',').map((item, index) => (
