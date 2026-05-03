@@ -986,11 +986,48 @@ export default function KitchenDashboard() {
             )}
 
             <p style={{ color: 'red', fontWeight: 'bold' }}>
-              <strong>Pickup Time:</strong> {order['Pickup Time']}
+                <strong>Pickup Time:</strong> {order['Pickup Time']}
             </p>
 
-            <p>
-              <strong>Total:</strong> {order['Total Price']}
+            <div
+            style={{
+                marginTop: '1rem',
+                marginBottom: '1rem',
+                padding: '1rem',
+                backgroundColor: '#ffffff',
+                border: '2px solid #333',
+                borderRadius: '8px'
+            }}
+            >
+            <h2
+                style={{
+                marginTop: 0,
+                marginBottom: '0.75rem',
+                fontSize: '1.8rem',
+                fontWeight: 'bold',
+                color: '#000'
+                }}
+            >
+                Items Ordered
+            </h2>
+
+            <ul
+                style={{
+                margin: 0,
+                paddingLeft: '1.5rem',
+                fontSize: '1.8rem',
+                fontWeight: 'bold',
+                lineHeight: '1.5'
+                }}
+            >
+                {order['Order Items']?.split(',').map((item, index) => (
+                <li key={index}>{item.trim()}</li>
+                ))}
+            </ul>
+            </div>
+
+            <p style={{ fontSize: '1.6rem', fontWeight: 'bold' }}>
+            <strong>Total:</strong> {order['Total Price']}
             </p>
 
             {isCreditDebitOrder(order) && (
@@ -1058,12 +1095,6 @@ export default function KitchenDashboard() {
                 </p>
               </div>
             )}
-
-            <ul>
-              {order['Order Items']?.split(',').map((item, index) => (
-                <li key={index}>{item.trim()}</li>
-              ))}
-            </ul>
 
             {!accepted.has(order.id) && (
               <button
