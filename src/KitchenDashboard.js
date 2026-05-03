@@ -71,8 +71,8 @@ export default function KitchenDashboard() {
         return;
       }
 
-      if (totalPrice < 0.5) {
-        alert('Total must be at least $0.50');
+      if (totalPrice < 0.10) {
+        alert('Total must be at least $0.10');
         return;
       }
 
