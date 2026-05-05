@@ -19,7 +19,7 @@ export default function KitchenDashboard() {
   const alarmAudio = useRef(null);
   const messageAudio = useRef(null);
 
-  const LOCATION_ID = 'MEGCHK';
+  const LOCATION_ID = 'DELGMT';
   const FIREBASE_ORDERS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/orders';
   const FIREBASE_ARCHIVE_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/archive';
   const CREATE_CHECKOUT_LINK_URL = 'https://createcheckoutlink-u6d6o7mcnq-uc.a.run.app/createCheckoutLink';
@@ -725,7 +725,7 @@ export default function KitchenDashboard() {
 
   return (
     <div style={{ padding: '1rem', fontFamily: 'Arial' }}>
-      <h1>Orders and Messages - Mega Chicken Burlington</h1>
+      <h1>Orders and Messages - Delicacies </h1>
 
       <p>
         <strong>Date:</strong>{' '}
