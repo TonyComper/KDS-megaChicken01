@@ -28,9 +28,25 @@ export default function KitchenDashboard() {
 
   const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 
-  const isBlank = (value) => {
-    return value === undefined || value === null || String(value).trim() === '';
-  };
+const isBlank = (value) => {
+  return value === undefined || value === null || String(value).trim() === '';
+};
+
+const formatPhoneNumber = (value) => {
+  if (isBlank(value)) return 'N/A';
+
+  const digits = String(value).replace(/\D/g, '');
+
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+
+  return String(value);
+};
 
   const isCreditDebitOrder = (order) => {
     const orderType = String(order?.['Order Type'] || '').toUpperCase().trim();
@@ -926,9 +942,9 @@ export default function KitchenDashboard() {
             <strong>Caller Name:</strong> {message['Caller_Name'] || 'N/A'}
           </p>
 
-          <p>
-            <strong>Caller Phone:</strong> {message['Caller_Phone'] || 'N/A'}
-          </p>
+<p>
+  <strong>Caller Phone:</strong> {formatPhoneNumber(message['Caller_Phone'])}
+</p>
 
           <p>
             <strong>Reason:</strong> {message['Message_Reason'] || 'N/A'}
@@ -985,9 +1001,9 @@ export default function KitchenDashboard() {
               <strong>Customer:</strong> {order['Customer Name']}
             </p>
 
-            <p>
-              <strong>Phone:</strong> {order['Customer Contact Number']}
-            </p>
+<p>
+  <strong>Phone:</strong> {formatPhoneNumber(order['Customer Contact Number'])}
+</p>
 
             <p>
               <strong>Order Type:</strong> {order['Order Type'] || 'N/A'}
@@ -1250,10 +1266,9 @@ export default function KitchenDashboard() {
                       <strong>Caller Name:</strong> {entry['Caller_Name']}
                     </p>
 
-                    <p>
-                      <strong>Caller Phone:</strong> {entry['Caller_Phone']}
-                    </p>
-
+<p>
+  <strong>Caller Phone:</strong> {formatPhoneNumber(entry['Caller_Phone'])}
+</p>
                     <p>
                       <strong>Reason:</strong> {entry['Message_Reason']}
                     </p>
@@ -1264,9 +1279,9 @@ export default function KitchenDashboard() {
                       <strong>Customer:</strong> {entry['Customer Name']}
                     </p>
 
-                    <p>
-                      <strong>Phone:</strong> {entry['Customer Contact Number']}
-                    </p>
+<p>
+  <strong>Phone:</strong> {formatPhoneNumber(entry['Customer Contact Number'])}
+</p>
 
                     <p>
                       <strong>Order Type:</strong> {entry['Order Type']}
@@ -1370,7 +1385,7 @@ export default function KitchenDashboard() {
             </p>
 
             <p style={{ fontSize: '1.3rem', marginBottom: '2rem' }}>
-              <strong>Phone:</strong> {confirmOrder.order['Customer Contact Number'] || 'N/A'}
+              <strong>Phone:</strong> {formatPhoneNumber(confirmOrder.order['Customer Contact Number'])}
             </p>
 
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
