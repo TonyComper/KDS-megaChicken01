@@ -1241,7 +1241,7 @@ export default function KitchenDashboard() {
                   color: '#084298'
                 }}
               >
-                Payment link is sent by VAPI voice assistant.
+                Payment link is sent by Hey Sue!.
               </div>
             )}
 
