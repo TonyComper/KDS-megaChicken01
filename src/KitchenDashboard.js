@@ -21,12 +21,17 @@ export default function KitchenDashboard() {
   const paidAudio = useRef(null);
   const paidOrdersRef = useRef(new Set(JSON.parse(localStorage.getItem('paidOrders') || '[]')));
 
-  const LOCATION_ID = 'MEGCHK';
-  const FIREBASE_ORDERS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/orders';
-  const FIREBASE_ARCHIVE_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/archive';
-  const CREATE_CHECKOUT_LINK_URL = 'https://createcheckoutlink-u6d6o7mcnq-uc.a.run.app/createCheckoutLink';
+const LOCATION_ID = 'MEGCHK';
 
-  const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+// Use 'VOICE' when VAPI sends the payment link.
+// Use 'DASHBOARD' when staff sends the payment link from the kitchen dashboard.
+const PAYMENT_LINK_MODE = 'VOICE';
+
+const FIREBASE_ORDERS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/orders';
+const FIREBASE_ARCHIVE_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/archive';
+const CREATE_CHECKOUT_LINK_URL = 'https://createcheckoutlink-u6d6o7mcnq-uc.a.run.app/createCheckoutLink';
+  
+const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 
 const isBlank = (value) => {
   return value === undefined || value === null || String(value).trim() === '';
@@ -786,28 +791,21 @@ const formatMoney = (value) => {
     return () => clearInterval(interval);
   }, [audioEnabled, accepted, seenOrders, seenMessages]);
 
-  const acceptOrder = async (id) => {
-    const orderToAccept = orders.find((order) => order.id === id);
+const acceptOrder = async (id) => {
+  const timestamp = new Date().toISOString();
 
-    if (!isPaidOrder(orderToAccept)) {
-      alert('This order cannot be accepted until it is marked PAID.');
-      return;
-    }
+  setAccepted((prev) => {
+    const updated = new Set(prev).add(id);
+    localStorage.setItem('acceptedOrders', JSON.stringify(Array.from(updated)));
+    return updated;
+  });
 
-    const timestamp = new Date().toISOString();
-
-    setAccepted((prev) => {
-      const updated = new Set(prev).add(id);
-      localStorage.setItem('acceptedOrders', JSON.stringify(Array.from(updated)));
-      return updated;
-    });
-
-    await fetch(`${FIREBASE_ORDERS_URL}/${id}.json`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 'Accepted At': timestamp })
-    });
-  };
+  await fetch(`${FIREBASE_ORDERS_URL}/${id}.json`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 'Accepted At': timestamp })
+  });
+};
 
   const markMessageAsRead = (id) => {
     setReadMessages((prev) => {
@@ -1230,16 +1228,24 @@ const formatMoney = (value) => {
             <strong>Total:</strong> {order['Total Price']}
             </p>
 
-            {isCreditDebitOrder(order) && (
-              <div
-                style={{
-                  marginTop: '1rem',
-                  marginBottom: '1rem',
-                  padding: '1rem',
-                  backgroundColor: '#fff8dc',
-                  border: '2px solid #f0ad4e',
-                  borderRadius: '8px'
-                }}
+{isCreditDebitOrder(order) && PAYMENT_LINK_MODE === 'VOICE' && (
+  <div
+    style={{
+      marginTop: '1rem',
+      marginBottom: '1rem',
+      padding: '1rem',
+      backgroundColor: '#e7f3ff',
+      border: '2px solid #0d6efd',
+      borderRadius: '8px',
+      fontWeight: 'bold',
+      color: '#084298'
+    }}
+  >
+    Payment link is sent by VAPI voice assistant.
+  </div>
+)}
+
+{isCreditDebitOrder(order) && PAYMENT_LINK_MODE !== 'VOICE' && (
               >
                 <p style={{ marginTop: 0, fontWeight: 'bold' }}>Credit/Debit Payment Link</p>
 
@@ -1297,20 +1303,19 @@ const formatMoney = (value) => {
             )}
 
             {!accepted.has(order.id) && (
-              <button
-                onClick={() => acceptOrder(order.id)}
-                disabled={!isPaidOrder(order)}
-                style={{
-                  marginTop: '1rem',
-                  backgroundColor: isPaidOrder(order) ? '#28a745' : '#6c757d',
-                  color: 'white',
-                  padding: '0.5rem 1rem',
-                  border: 'none',
-                  borderRadius: '4px'
-                }}
-              >
-                ACCEPT
-              </button>
+<button
+  onClick={() => acceptOrder(order.id)}
+  style={{
+    marginTop: '1rem',
+    backgroundColor: '#28a745',
+    color: 'white',
+    padding: '0.5rem 1rem',
+    border: 'none',
+    borderRadius: '4px'
+  }}
+>
+  ACCEPT
+</button>
             )}
           </div>
         ))}
