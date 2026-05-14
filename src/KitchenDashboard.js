@@ -21,80 +21,80 @@ export default function KitchenDashboard() {
   const paidAudio = useRef(null);
   const paidOrdersRef = useRef(new Set(JSON.parse(localStorage.getItem('paidOrders') || '[]')));
 
-const LOCATION_ID = 'MEGCHK';
+  const LOCATION_ID = 'MEGCHK';
 
-// Use 'VOICE' when VAPI sends the payment link.
-// Use 'DASHBOARD' when staff sends the payment link from the kitchen dashboard.
-const PAYMENT_LINK_MODE = 'VOICE';
+  // Use 'VOICE' when VAPI sends the payment link.
+  // Use 'DASHBOARD' when staff sends the payment link from the kitchen dashboard.
+  const PAYMENT_LINK_MODE = 'VOICE';
 
-const FIREBASE_ORDERS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/orders';
-const FIREBASE_ARCHIVE_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/archive';
-const CREATE_CHECKOUT_LINK_URL = 'https://createcheckoutlink-u6d6o7mcnq-uc.a.run.app/createCheckoutLink';
-  
-const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+  const FIREBASE_ORDERS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/orders';
+  const FIREBASE_ARCHIVE_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/archive';
+  const CREATE_CHECKOUT_LINK_URL = 'https://createcheckoutlink-u6d6o7mcnq-uc.a.run.app/createCheckoutLink';
 
-const isBlank = (value) => {
-  return value === undefined || value === null || String(value).trim() === '';
-};
+  const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 
-const formatPhoneNumber = (value) => {
-  if (isBlank(value)) return 'N/A';
+  const isBlank = (value) => {
+    return value === undefined || value === null || String(value).trim() === '';
+  };
 
-  const digits = String(value).replace(/\D/g, '');
+  const formatPhoneNumber = (value) => {
+    if (isBlank(value)) return 'N/A';
 
-  if (digits.length === 10) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
+    const digits = String(value).replace(/\D/g, '');
 
-  if (digits.length === 11 && digits.startsWith('1')) {
-    return `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
-  }
-
-  return String(value);
-};
-
-const getItemizedItems = (order) => {
-  const rawItems =
-    order?.itemizedItems ||
-    order?.ItemizedItems ||
-    order?.['Itemized Items'];
-
-  if (!rawItems) return [];
-
-  if (Array.isArray(rawItems)) {
-    return rawItems.filter(Boolean);
-  }
-
-  if (typeof rawItems === 'object') {
-    return Object.values(rawItems).filter(Boolean);
-  }
-
-  if (typeof rawItems === 'string') {
-    try {
-      const parsed = JSON.parse(rawItems);
-
-      if (Array.isArray(parsed)) {
-        return parsed.filter(Boolean);
-      }
-
-      if (parsed && typeof parsed === 'object') {
-        return Object.values(parsed).filter(Boolean);
-      }
-    } catch (err) {
-      console.warn('Could not parse itemizedItems JSON string:', err);
+    if (digits.length === 10) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
     }
-  }
 
-  return [];
-};
+    if (digits.length === 11 && digits.startsWith('1')) {
+      return `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+    }
 
-const formatMoney = (value) => {
-  const number = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+    return String(value);
+  };
 
-  if (!Number.isFinite(number)) return 'N/A';
+  const getItemizedItems = (order) => {
+    const rawItems =
+      order?.itemizedItems ||
+      order?.ItemizedItems ||
+      order?.['Itemized Items'];
 
-  return `$${number.toFixed(2)}`;
-};
+    if (!rawItems) return [];
+
+    if (Array.isArray(rawItems)) {
+      return rawItems.filter(Boolean);
+    }
+
+    if (typeof rawItems === 'object') {
+      return Object.values(rawItems).filter(Boolean);
+    }
+
+    if (typeof rawItems === 'string') {
+      try {
+        const parsed = JSON.parse(rawItems);
+
+        if (Array.isArray(parsed)) {
+          return parsed.filter(Boolean);
+        }
+
+        if (parsed && typeof parsed === 'object') {
+          return Object.values(parsed).filter(Boolean);
+        }
+      } catch (err) {
+        console.warn('Could not parse itemizedItems JSON string:', err);
+      }
+    }
+
+    return [];
+  };
+
+  const formatMoney = (value) => {
+    const number = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+
+    if (!Number.isFinite(number)) return 'N/A';
+
+    return `$${number.toFixed(2)}`;
+  };
 
   const isCreditDebitOrder = (order) => {
     const orderType = String(order?.['Order Type'] || '').toUpperCase().trim();
@@ -791,21 +791,21 @@ const formatMoney = (value) => {
     return () => clearInterval(interval);
   }, [audioEnabled, accepted, seenOrders, seenMessages]);
 
-const acceptOrder = async (id) => {
-  const timestamp = new Date().toISOString();
+  const acceptOrder = async (id) => {
+    const timestamp = new Date().toISOString();
 
-  setAccepted((prev) => {
-    const updated = new Set(prev).add(id);
-    localStorage.setItem('acceptedOrders', JSON.stringify(Array.from(updated)));
-    return updated;
-  });
+    setAccepted((prev) => {
+      const updated = new Set(prev).add(id);
+      localStorage.setItem('acceptedOrders', JSON.stringify(Array.from(updated)));
+      return updated;
+    });
 
-  await fetch(`${FIREBASE_ORDERS_URL}/${id}.json`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 'Accepted At': timestamp })
-  });
-};
+    await fetch(`${FIREBASE_ORDERS_URL}/${id}.json`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 'Accepted At': timestamp })
+    });
+  };
 
   const markMessageAsRead = (id) => {
     setReadMessages((prev) => {
@@ -983,9 +983,9 @@ const acceptOrder = async (id) => {
             <strong>Caller Name:</strong> {message['Caller_Name'] || 'N/A'}
           </p>
 
-<p>
-  <strong>Caller Phone:</strong> {formatPhoneNumber(message['Caller_Phone'])}
-</p>
+          <p>
+            <strong>Caller Phone:</strong> {formatPhoneNumber(message['Caller_Phone'])}
+          </p>
 
           <p>
             <strong>Reason:</strong> {message['Message_Reason'] || 'N/A'}
@@ -1042,9 +1042,9 @@ const acceptOrder = async (id) => {
               <strong>Customer:</strong> {order['Customer Name']}
             </p>
 
-<p>
-  <strong>Phone:</strong> {formatPhoneNumber(order['Customer Contact Number'])}
-</p>
+            <p>
+              <strong>Phone:</strong> {formatPhoneNumber(order['Customer Contact Number'])}
+            </p>
 
             <p>
               <strong>Order Type:</strong> {order['Order Type'] || 'N/A'}
@@ -1133,119 +1133,128 @@ const acceptOrder = async (id) => {
             )}
 
             <p style={{ color: 'red', fontWeight: 'bold' }}>
-                <strong>Pickup Time:</strong> {order['Pickup Time']}
+              <strong>Pickup Time:</strong> {order['Pickup Time']}
             </p>
 
             <div
-            style={{
+              style={{
                 marginTop: '1rem',
                 marginBottom: '1rem',
                 padding: '1rem',
                 backgroundColor: '#ffffff',
                 border: '2px solid #333',
                 borderRadius: '8px'
-            }}
+              }}
             >
-            <h2
+              <h2
                 style={{
-                marginTop: 0,
-                marginBottom: '0.75rem',
-                fontSize: '1.8rem',
-                fontWeight: 'bold',
-                color: '#000'
+                  marginTop: 0,
+                  marginBottom: '0.75rem',
+                  fontSize: '1.8rem',
+                  fontWeight: 'bold',
+                  color: '#000'
                 }}
-            >
+              >
                 Items Ordered
-            </h2>
+              </h2>
 
-{getItemizedItems(order).length > 0 ? (
-  <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-    {getItemizedItems(order).map((item, index) => (
-      <div
-        key={index}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '70px 1fr 120px',
-          gap: '0.75rem',
-          alignItems: 'center',
-          padding: '0.35rem 0',
-          borderBottom: '1px solid #ddd'
-        }}
-      >
-        <span>{item.quantity || 1} x</span>
-        <span>{item.name || 'Item'}</span>
-        <span style={{ textAlign: 'right' }}>{formatMoney(item.lineTotal || item.price)}</span>
-      </div>
-    ))}
+              {getItemizedItems(order).length > 0 ? (
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                  {getItemizedItems(order).map((item, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '70px 1fr 120px',
+                        gap: '0.75rem',
+                        alignItems: 'center',
+                        padding: '0.35rem 0',
+                        borderBottom: '1px solid #ddd'
+                      }}
+                    >
+                      <span>{item.quantity || 1} x</span>
+                      <span>{item.name || 'Item'}</span>
+                      <span style={{ textAlign: 'right' }}>{formatMoney(item.lineTotal || item.price)}</span>
+                    </div>
+                  ))}
 
-    <div
-      style={{
-        marginTop: '0.75rem',
-        paddingTop: '0.75rem',
-        borderTop: '2px solid #333',
-        display: 'grid',
-        gap: '0.35rem'
-      }}
-    >
-      {order.Subtotal !== undefined && order.Subtotal !== '' && (
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>Subtotal</span>
-          <span>{formatMoney(order.Subtotal)}</span>
-        </div>
-      )}
+                  <div
+                    style={{
+                      marginTop: '0.75rem',
+                      paddingTop: '0.75rem',
+                      borderTop: '2px solid #333',
+                      display: 'grid',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    {order.Subtotal !== undefined && order.Subtotal !== '' && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Subtotal</span>
+                        <span>{formatMoney(order.Subtotal)}</span>
+                      </div>
+                    )}
 
-      {(order.tax !== undefined || order.Tax !== undefined) && (
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>Tax</span>
-          <span>{formatMoney(order.tax ?? order.Tax)}</span>
-        </div>
-      )}
+                    {(order.tax !== undefined || order.Tax !== undefined) && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Tax</span>
+                        <span>{formatMoney(order.tax ?? order.Tax)}</span>
+                      </div>
+                    )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.7rem' }}>
-        <span>Total</span>
-        <span>{formatMoney(order['Total Price'])}</span>
-      </div>
-    </div>
-  </div>
-) : (
-  <ul
-    style={{
-      margin: 0,
-      paddingLeft: '1.5rem',
-      fontSize: '1.8rem',
-      fontWeight: 'bold',
-      lineHeight: '1.5'
-    }}
-  >
-    {order['Order Items']?.split(',').map((item, index) => (
-      <li key={index}>{item.trim()}</li>
-    ))}
-  </ul>
-)}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.7rem' }}>
+                      <span>Total</span>
+                      <span>{formatMoney(order['Total Price'])}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <ul
+                  style={{
+                    margin: 0,
+                    paddingLeft: '1.5rem',
+                    fontSize: '1.8rem',
+                    fontWeight: 'bold',
+                    lineHeight: '1.5'
+                  }}
+                >
+                  {order['Order Items']?.split(',').map((item, index) => (
+                    <li key={index}>{item.trim()}</li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <p style={{ fontSize: '1.6rem', fontWeight: 'bold' }}>
-            <strong>Total:</strong> {order['Total Price']}
+              <strong>Total:</strong> {order['Total Price']}
             </p>
 
-{isCreditDebitOrder(order) && PAYMENT_LINK_MODE === 'VOICE' && (
-  <div
-    style={{
-      marginTop: '1rem',
-      marginBottom: '1rem',
-      padding: '1rem',
-      backgroundColor: '#e7f3ff',
-      border: '2px solid #0d6efd',
-      borderRadius: '8px',
-      fontWeight: 'bold',
-      color: '#084298'
-    }}
-  >
-    Payment link is sent by VAPI voice assistant.
-  </div>
-)}
+            {isCreditDebitOrder(order) && PAYMENT_LINK_MODE === 'VOICE' && (
+              <div
+                style={{
+                  marginTop: '1rem',
+                  marginBottom: '1rem',
+                  padding: '1rem',
+                  backgroundColor: '#e7f3ff',
+                  border: '2px solid #0d6efd',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  color: '#084298'
+                }}
+              >
+                Payment link is sent by VAPI voice assistant.
+              </div>
+            )}
 
-{isCreditDebitOrder(order) && PAYMENT_LINK_MODE !== 'VOICE' && (
+            {isCreditDebitOrder(order) && PAYMENT_LINK_MODE !== 'VOICE' && (
+              <div
+                style={{
+                  marginTop: '1rem',
+                  marginBottom: '1rem',
+                  padding: '1rem',
+                  backgroundColor: '#fff8dc',
+                  border: '2px solid #f0ad4e',
+                  borderRadius: '8px'
+                }}
               >
                 <p style={{ marginTop: 0, fontWeight: 'bold' }}>Credit/Debit Payment Link</p>
 
@@ -1303,19 +1312,19 @@ const acceptOrder = async (id) => {
             )}
 
             {!accepted.has(order.id) && (
-<button
-  onClick={() => acceptOrder(order.id)}
-  style={{
-    marginTop: '1rem',
-    backgroundColor: '#28a745',
-    color: 'white',
-    padding: '0.5rem 1rem',
-    border: 'none',
-    borderRadius: '4px'
-  }}
->
-  ACCEPT
-</button>
+              <button
+                onClick={() => acceptOrder(order.id)}
+                style={{
+                  marginTop: '1rem',
+                  backgroundColor: '#28a745',
+                  color: 'white',
+                  padding: '0.5rem 1rem',
+                  border: 'none',
+                  borderRadius: '4px'
+                }}
+              >
+                ACCEPT
+              </button>
             )}
           </div>
         ))}
@@ -1365,9 +1374,10 @@ const acceptOrder = async (id) => {
                       <strong>Caller Name:</strong> {entry['Caller_Name']}
                     </p>
 
-<p>
-  <strong>Caller Phone:</strong> {formatPhoneNumber(entry['Caller_Phone'])}
-</p>
+                    <p>
+                      <strong>Caller Phone:</strong> {formatPhoneNumber(entry['Caller_Phone'])}
+                    </p>
+
                     <p>
                       <strong>Reason:</strong> {entry['Message_Reason']}
                     </p>
@@ -1378,9 +1388,9 @@ const acceptOrder = async (id) => {
                       <strong>Customer:</strong> {entry['Customer Name']}
                     </p>
 
-<p>
-  <strong>Phone:</strong> {formatPhoneNumber(entry['Customer Contact Number'])}
-</p>
+                    <p>
+                      <strong>Phone:</strong> {formatPhoneNumber(entry['Customer Contact Number'])}
+                    </p>
 
                     <p>
                       <strong>Order Type:</strong> {entry['Order Type']}
