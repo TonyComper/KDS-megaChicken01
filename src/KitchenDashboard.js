@@ -1,6 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 
 export default function KitchenDashboard() {
+  const [restaurantConfig, setRestaurantConfig] = useState(null);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [configError, setConfigError] = useState('');
+
   const [orders, setOrders] = useState([]);
   const [accepted, setAccepted] = useState(new Set(JSON.parse(localStorage.getItem('acceptedOrders') || '[]')));
   const [seenOrders, setSeenOrders] = useState(new Set(JSON.parse(localStorage.getItem('seenOrders') || '[]')));
@@ -21,17 +25,53 @@ export default function KitchenDashboard() {
   const paidAudio = useRef(null);
   const paidOrdersRef = useRef(new Set(JSON.parse(localStorage.getItem('paidOrders') || '[]')));
 
-  const LOCATION_ID = 'MEGCHK';
+const getLocationIdFromUrl = () => {
+  const searchParams = new URLSearchParams(window.location.search);
 
-  // Use 'VOICE' when VAPI sends the payment link.
-  // Use 'DASHBOARD' when staff sends the payment link from the kitchen dashboard.
-  const PAYMENT_LINK_MODE = 'VOICE';
+  const queryLocation = String(
+    searchParams.get('location') || ''
+  )
+    .trim()
+    .toUpperCase();
+
+  if (/^[A-Z0-9]{6}$/.test(queryLocation)) {
+    return queryLocation;
+  }
+
+  const pathParts = String(window.location.pathname || '')
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const pathLocation = String(
+    pathParts[pathParts.length - 1] || ''
+  )
+    .trim()
+    .toUpperCase();
+
+  if (/^[A-Z0-9]{6}$/.test(pathLocation)) {
+    return pathLocation;
+  }
+
+  return '';
+};
+
+  const LOCATION_ID = getLocationIdFromUrl();
+
+  // Per-restaurant setting loaded from Firebase.
+  // Supported values: VOICE or DASHBOARD.
+  const PAYMENT_LINK_MODE = String(
+    restaurantConfig?.paymentLinkMode ||
+      restaurantConfig?.kitchenDashboard?.paymentLinkMode ||
+      'VOICE'
+  ).toUpperCase();
 
   const FIREBASE_ORDERS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/orders';
   const FIREBASE_ARCHIVE_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/archive';
+  const FIREBASE_LOCATIONS_URL = 'https://privitipizza41-default-rtdb.firebaseio.com/locations';
   const CREATE_CHECKOUT_LINK_URL = 'https://createcheckoutlink-u6d6o7mcnq-uc.a.run.app/createCheckoutLink';
 
-  const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+  const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
   const isBlank = (value) => {
     return value === undefined || value === null || String(value).trim() === '';
@@ -145,7 +185,7 @@ export default function KitchenDashboard() {
     const orderTimeMs = getParsedTimeMs(entry['Order Date']);
     const orderAgeMs = Number.isFinite(orderTimeMs) ? Date.now() - orderTimeMs : 0;
 
-    if (orderAgeMs > THIRTY_MINUTES_MS) return true;
+    if (orderAgeMs > TWENTY_FOUR_HOURS_MS) return true;
 
     const status = String(entry.status || entry.Status || '').toUpperCase().trim();
 
@@ -160,7 +200,7 @@ export default function KitchenDashboard() {
       const pendingStartedMs = getParsedTimeMs(pendingStartedRaw);
       const pendingAgeMs = Number.isFinite(pendingStartedMs) ? Date.now() - pendingStartedMs : 0;
 
-      if (pendingAgeMs > THIRTY_MINUTES_MS) return true;
+      if (pendingAgeMs >TWENTY_FOUR_HOURS_MS) return true;
     }
 
     return false;
@@ -382,104 +422,240 @@ export default function KitchenDashboard() {
 
   const buildReceiptHtml = (entry) => {
     const isMessage = entry?.['Order Type'] === 'MESSAGE';
-    const orderType = entry?.['Order Type'] || 'N/A';
+    const orderType = entry?.['Order Type'] || entry?.orderType || 'N/A';
+    const paymentProvider = String(
+      entry?.paymentProvider ||
+        restaurantConfig?.paymentProvider ||
+        ''
+    ).toUpperCase();
 
-    const title = isMessage ? 'MESSAGE' : 'ORDER';
-    const orderNumberLine = isMessage
-      ? `Message ID: ${escapeHtml(entry?.id || '')}`
-      : `Order #: ${escapeHtml(entry?.['Order ID'] || entry?.id || '')}`;
+    const title = isMessage ? 'HEYSUE MESSAGE' : 'HEYSUE PAID ORDER';
+    const orderNumber = entry?.['Order ID'] || entry?.orderId || entry?.orderNumber || entry?.id || '';
+    const customerName = isMessage
+      ? entry?.['Caller_Name']
+      : entry?.['Customer Name'] || entry?.customerName;
+    const customerPhone = isMessage
+      ? entry?.['Caller_Phone']
+      : entry?.['Customer Contact Number'] || entry?.customerPhone || entry?.phoneNumber;
+    const pickupTime = entry?.['Pickup Time'] || entry?.pickupTime || 'ASAP';
+    const orderDate = entry?.['Order Date'] || entry?.['Message Date'] || entry?.createdAt || '';
 
-    const timeLine = escapeHtml(entry?.['Order Date'] || entry?.['Message Date'] || '');
-    const customerName = escapeHtml(isMessage ? entry?.['Caller_Name'] : entry?.['Customer Name']);
-    const phone = escapeHtml(isMessage ? entry?.['Caller_Phone'] : entry?.['Customer Contact Number']);
-    const pickupTime = escapeHtml(entry?.['Pickup Time']);
-    const deliveryAddress = escapeHtml(entry?.['Delivery Address']);
-    const instructions = escapeHtml(entry?.['Order Instructions']);
-    const reason = escapeHtml(entry?.['Message_Reason']);
+    const backendSubtotal =
+      entry?.backendSubtotal ??
+      entry?.Subtotal ??
+      entry?.subtotal;
 
-    const serviceFeeRaw = entry?.serviceFee ?? entry?.['Service Fee'];
-    const deliveryFeeRaw = entry?.deliveryFee ?? entry?.['Delivery Fee'];
+    const backendTax =
+      entry?.backendTax ??
+      entry?.tax ??
+      entry?.Tax;
 
-    const serviceFee = escapeHtml(serviceFeeRaw !== undefined && serviceFeeRaw !== null ? String(serviceFeeRaw) : '');
-    const deliveryFee = escapeHtml(deliveryFeeRaw !== undefined && deliveryFeeRaw !== null ? String(deliveryFeeRaw) : '');
+    const backendTotal =
+      entry?.backendTotal ??
+      entry?.['Total Price'] ??
+      entry?.totalPrice ??
+      entry?.total;
 
-    const total = escapeHtml(entry?.['Total Price']);
-
-    const rawStatus = (entry?.status ?? entry?.Status ?? '').toString().trim();
-    const statusText = isMessage
+    const paymentStatus = isMessage
       ? 'N/A'
-      : String(orderType).toUpperCase() === 'PICK UP'
-      ? buildPickupStatusLine(entry)
-      : rawStatus
-      ? rawStatus.toUpperCase()
-      : 'N/A';
+      : `${buildPickupStatusLine(entry)}${paymentProvider ? ` - ${paymentProvider}` : ''}`;
 
-    const status = escapeHtml(statusText);
+    const kitchenNotes =
+      entry?.kitchenNotes ||
+      entry?.orderInstructions ||
+      entry?.['Order Instructions'] ||
+      entry?.notes ||
+      '';
 
-    const items = (entry?.['Order Items'] || '')
-      .split(',')
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map((x) => `<div class="item">• ${escapeHtml(x)}</div>`)
-      .join('');
+    const translatedKitchenNote =
+      entry?.translatedKitchenNote ||
+      entry?.kitchenTranslatedNote ||
+      entry?.kitchenTranslatedOrderText ||
+      '';
 
-    const deliveryBlock =
-      !isMessage && String(orderType).toLowerCase() === 'delivery'
+const kitchenLanguageName =
+  restaurantConfig?.kitchenLanguageName ||
+  restaurantConfig?.kitchen?.languageName ||
+  restaurantConfig?.kitchenLanguage ||
+  restaurantConfig?.kitchen?.language ||
+  '';
+
+    const originalCustomerOrder =
+      entry?.originalOrderText ||
+      entry?.originalCustomerOrderText ||
+      entry?.originalOrderDetails ||
+      entry?.['Order Items'] ||
+      '';
+
+    const translatedOriginalCustomerOrder =
+      entry?.translatedOriginalOrderText ||
+      entry?.translatedOriginalCustomerOrderText ||
+      entry?.kitchenTranslatedOrderText ||
+      '';
+
+    const itemizedItems = getItemizedItems(entry);
+
+    const formatModifierText = (item) => {
+      const modifierValue =
+        item?.modifiers ||
+        item?.modifier ||
+        item?.instructions ||
+        item?.notes ||
+        item?.remark ||
+        '';
+
+      if (Array.isArray(modifierValue)) {
+        return modifierValue
+          .map((value) =>
+            typeof value === 'object'
+              ? value.name || value.label || value.value || JSON.stringify(value)
+              : String(value)
+          )
+          .filter(Boolean)
+          .join(', ');
+      }
+
+      if (modifierValue && typeof modifierValue === 'object') {
+        return Object.values(modifierValue)
+          .map((value) =>
+            typeof value === 'object'
+              ? value.name || value.label || value.value || JSON.stringify(value)
+              : String(value)
+          )
+          .filter(Boolean)
+          .join(', ');
+      }
+
+      return String(modifierValue || '').trim();
+    };
+
+    const itemsHtml =
+      itemizedItems.length > 0
+        ? itemizedItems
+            .map((item) => {
+              const quantity = Number(item?.quantity || 1);
+              const name = item?.name || item?.['Item Name'] || 'Item';
+              const price = Number(item?.price || 0);
+              const lineTotal = Number(
+                item?.lineTotal !== undefined
+                  ? item.lineTotal
+                  : price * quantity
+              );
+              const modifiers = formatModifierText(item);
+
+              return `
+                <div class="itemRow">
+                  <div class="itemMain">
+                    <span class="qty">${escapeHtml(quantity)} x</span>
+                    <span class="itemName">${escapeHtml(name)}</span>
+                    <span class="itemPrice">${escapeHtml(formatMoney(lineTotal))}</span>
+                  </div>
+                  ${
+                    modifiers
+                      ? `<div class="modifier">- ${escapeHtml(modifiers)}</div>`
+                      : ''
+                  }
+                </div>
+              `;
+            })
+            .join('')
+        : String(entry?.['Order Items'] || '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .map((value) => `<div class="itemRow">• ${escapeHtml(value)}</div>`)
+            .join('');
+
+    const translatedBlock =
+      translatedKitchenNote
         ? `
           <div class="hr"></div>
-          <div class="label">DELIVERY ADDRESS</div>
-          <div class="wrap">${deliveryAddress || 'N/A'}</div>
-          <div class="label" style="margin-top:6px;">INSTRUCTIONS</div>
-          <div class="wrap">${instructions || 'N/A'}</div>
-        `
-        : '';
-
-    const pickupBlock =
-      !isMessage && String(orderType).toUpperCase() === 'PICK UP'
-        ? `
-          <div class="hr"></div>
-          <div class="label">PICKUP TIME</div>
-          <div class="big">${pickupTime || 'N/A'}</div>
-        `
-        : '';
-
-    const messageBlock =
-      isMessage
-        ? `
-          <div class="hr"></div>
-          <div class="label">REASON</div>
-          <div class="wrap">${reason || 'N/A'}</div>
-        `
-        : '';
-
-    const itemsBlock =
-      !isMessage
-        ? `
-          <div class="hr"></div>
-          <div class="label">ITEMS</div>
-          <div class="items">${items || '<div class="item">N/A</div>'}</div>
-        `
-        : '';
-
-    const feesBlock =
-      !isMessage
-        ? `
-          ${serviceFee ? `<div class="row"><span class="label">SERVICE FEE</span><span class="value">${serviceFee}</span></div>` : ''}
-          ${deliveryFee ? `<div class="row"><span class="label">DELIVERY FEE</span><span class="value">${deliveryFee}</span></div>` : ''}
-        `
-        : '';
-
-    const totalBlock =
-      !isMessage
-        ? `
-          <div class="hr"></div>
-          ${feesBlock}
-          <div class="row" style="margin-top:4px;">
-            <span class="label">TOTAL</span>
-            <span class="big">${total || 'N/A'}</span>
+          <div class="sectionTitle">
+            TRANSLATED KITCHEN NOTE${kitchenLanguageName ? ` - ${escapeHtml(String(kitchenLanguageName).toUpperCase())}` : ''}
           </div>
+          <div class="note">${escapeHtml(translatedKitchenNote)}</div>
         `
         : '';
+
+    if (isMessage) {
+      return `
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>HeySue Message</title>
+            <style>
+              @page {
+                size: 80mm auto;
+                margin: 3mm;
+              }
+
+              html,
+              body {
+                width: 80mm;
+                margin: 0;
+                padding: 0;
+                background: #fff;
+              }
+
+              body {
+                font-family: Arial, sans-serif;
+                font-size: 12px;
+                line-height: 1.3;
+                color: #000;
+              }
+
+              .receipt {
+                width: 74mm;
+                max-width: 74mm;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+              }
+
+              .center { text-align: center; }
+              .title { font-size: 17px; font-weight: 900; }
+              .hr { border-top: 1px dashed #000; margin: 8px 0; }
+              .label { font-weight: 900; }
+              .wrap {
+                overflow-wrap: anywhere;
+                word-break: break-word;
+                white-space: pre-wrap;
+              }
+
+              @media print {
+                html,
+                body,
+                .receipt {
+                  width: 74mm;
+                  max-width: 74mm;
+                }
+
+                * {
+                  -webkit-print-color-adjust: exact;
+                  print-color-adjust: exact;
+                }
+              }
+            </style>
+          </head>
+          <body onload="window.print(); setTimeout(() => window.close(), 300);">
+            <div class="receipt">
+              <div class="center title">HEYSUE MESSAGE</div>
+              <div class="hr"></div>
+              <div><span class="label">MESSAGE ID:</span> ${escapeHtml(orderNumber)}</div>
+              <div><span class="label">CALLER:</span> ${escapeHtml(customerName || 'N/A')}</div>
+              <div><span class="label">PHONE:</span> ${escapeHtml(formatPhoneNumber(customerPhone))}</div>
+              <div><span class="label">TIME:</span> ${escapeHtml(orderDate)}</div>
+              <div class="hr"></div>
+              <div class="label">REASON</div>
+              <div class="wrap">${escapeHtml(entry?.['Message_Reason'] || 'N/A')}</div>
+              <div class="hr"></div>
+              <div class="center">© 2026 HeySue!</div>
+            </div>
+          </body>
+        </html>
+      `;
+    }
 
     return `
       <!doctype html>
@@ -487,110 +663,149 @@ export default function KitchenDashboard() {
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>${escapeHtml(title)}</title>
+          <title>HeySue Kitchen Receipt</title>
           <style>
-            @page { margin: 4mm; }
+            @page {
+              size: 80mm auto;
+              margin: 3mm;
+            }
+
+            html,
             body {
-              font-family: Arial, sans-serif;
+              width: 80mm;
+              margin: 0;
+              padding: 0;
+              background: #fff;
+            }
+
+            body {
+              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+                "Liberation Mono", "Courier New", monospace;
               font-size: 11px;
+              line-height: 1.3;
               color: #000;
             }
 
-            .receipt { width: 220px; }
+            .receipt {
+              width: 74mm;
+              max-width: 74mm;
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+
             .center { text-align: center; }
+            .title { font-size: 17px; font-weight: 900; }
+            .orderNo { font-size: 16px; font-weight: 900; margin-top: 5px; }
             .hr { border-top: 1px dashed #000; margin: 8px 0; }
-
-            .title {
-              font-size: 15px;
-              font-weight: 800;
-              letter-spacing: 0.3px;
-            }
-
-            .orderNo {
-              font-size: 15px;
-              font-weight: 900;
-              margin-top: 6px;
-            }
-
-            .statusBig {
-              font-size: 13px;
-              font-weight: 900;
-              margin-top: 4px;
-            }
-
-            .typeBig {
-              font-size: 14px;
-              font-weight: 900;
-              margin-top: 4px;
-            }
-
-            .customerBig {
-              font-size: 14px;
-              font-weight: 900;
-              margin-top: 2px;
-            }
-
-            .label { font-weight: 800; }
-            .value { font-weight: 700; }
-            .big { font-size: 14px; font-weight: 900; }
-
+            .sectionTitle { font-weight: 900; margin-bottom: 5px; }
             .row {
               display: flex;
               justify-content: space-between;
-              gap: 8px;
-              margin: 2px 0;
+              gap: 10px;
+              margin: 3px 0;
             }
-
-            .items { margin-top: 4px; }
-            .item { margin: 2px 0; }
-
-            .mono {
-              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            .label { font-weight: 900; }
+            .itemRow {
+              margin: 5px 0;
+              break-inside: avoid;
             }
-
-            .wrap, .item, .mono {
-              word-wrap: break-word;
+            .itemMain {
+              display: grid;
+              grid-template-columns: 10mm 1fr auto;
+              gap: 2mm;
+              align-items: start;
+            }
+            .qty, .itemName, .itemPrice { font-weight: 800; }
+            .itemName,
+            .modifier,
+            .note,
+            .original {
               overflow-wrap: anywhere;
+              word-break: break-word;
             }
-
-            .footer {
-              margin-top: 10px;
+            .modifier {
+              margin-left: 12mm;
               font-size: 10px;
-              text-align: center;
+            }
+            .note, .original { white-space: pre-wrap; }
+            .totalRow { font-size: 13px; font-weight: 900; }
+            .footer { text-align: center; font-size: 10px; margin-top: 8px; }
+
+            @media print {
+              html,
+              body,
+              .receipt {
+                width: 74mm;
+                max-width: 74mm;
+              }
+
+              * {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
             }
           </style>
         </head>
-        <body onload="window.print(); setTimeout(()=>window.close(), 300);">
+        <body onload="window.print(); setTimeout(() => window.close(), 300);">
           <div class="receipt">
-            <div class="center title">${escapeHtml(title)}</div>
-
-            <div class="center orderNo">${escapeHtml(orderNumberLine)}</div>
-            <div class="center statusBig">STATUS: ${status}</div>
-            <div class="center typeBig">TYPE: ${escapeHtml(orderType)}</div>
+            <div class="center title">HEYSUE PAID ORDER</div>
+            <div class="center orderNo">ORDER #: ${escapeHtml(orderNumber)}</div>
 
             <div class="hr"></div>
 
-            <div class="label">${isMessage ? 'CALLER' : 'CUSTOMER'}</div>
-            <div class="customerBig wrap">${customerName || 'N/A'}</div>
-
-            <div class="row">
-              <span class="label">PHONE</span>
-              <span class="mono">${phone || 'N/A'}</span>
-            </div>
-
-            <div class="row">
-              <span class="label">${isMessage ? 'TIME' : 'ORDER TIME'}</span>
-              <span class="mono wrap" style="text-align:right;">${timeLine || ''}</span>
-            </div>
-
-            ${messageBlock}
-            ${deliveryBlock}
-            ${pickupBlock}
-            ${itemsBlock}
-            ${totalBlock}
+            <div><span class="label">CUSTOMER:</span> ${escapeHtml(customerName || 'N/A')}</div>
+            <div><span class="label">PHONE:</span> ${escapeHtml(formatPhoneNumber(customerPhone))}</div>
+            <div><span class="label">PICKUP TIME:</span> ${escapeHtml(pickupTime)}</div>
+            <div><span class="label">ORDER TYPE:</span> ${escapeHtml(orderType)}</div>
+            <div><span class="label">PAYMENT:</span> ${escapeHtml(paymentStatus)}</div>
+            <div><span class="label">ORDER TIME:</span> ${escapeHtml(orderDate)}</div>
 
             <div class="hr"></div>
-            <div class="footer">© 2026 HeySue!</div>
+            <div class="sectionTitle">ITEMS</div>
+            ${itemsHtml || '<div>N/A</div>'}
+<div class="hr"></div>
+<div class="sectionTitle">ORIGINAL CUSTOMER ORDER</div>
+<div class="original">
+  ${escapeHtml(originalCustomerOrder || 'N/A')}
+</div>
+
+<div class="hr"></div>
+<div class="sectionTitle">KITCHEN NOTES</div>
+<div class="note">
+  ${escapeHtml(kitchenNotes || 'None')}
+</div>
+
+${
+  translatedOriginalCustomerOrder
+    ? `
+      <div class="hr"></div>
+      <div class="sectionTitle">
+        TRANSLATED CUSTOMER ORDER${
+          kitchenLanguageName
+            ? ` - ${escapeHtml(
+                String(kitchenLanguageName).toUpperCase()
+              )}`
+            : ''
+        }
+      </div>
+      <div class="original">
+        ${escapeHtml(translatedOriginalCustomerOrder)}
+      </div>
+    `
+    : ''
+}
+
+${translatedBlock}
+
+            <div class="hr"></div>
+            <div class="sectionTitle">TOTAL</div>
+            <div class="row"><span>Subtotal:</span><span>${escapeHtml(formatMoney(backendSubtotal))}</span></div>
+            <div class="row"><span>Tax:</span><span>${escapeHtml(formatMoney(backendTax))}</span></div>
+            <div class="row totalRow"><span>Total Paid:</span><span>${escapeHtml(formatMoney(backendTotal))}</span></div>
+
+            <div class="hr"></div>
+            <div class="footer">© 2026 HeySue! • ${escapeHtml(LOCATION_ID)}</div>
           </div>
         </body>
       </html>
@@ -666,6 +881,63 @@ export default function KitchenDashboard() {
       console.log(`📦 Archived ${entry['Order Type'] || 'entry'} ${id} from ${entryDateStr}`);
     }
   };
+
+  useEffect(() => {
+    let canceled = false;
+
+    const loadRestaurantConfig = async () => {
+      setConfigLoading(true);
+      setConfigError('');
+
+      if (!LOCATION_ID) {
+        setRestaurantConfig(null);
+        setConfigError(
+          'Invalid restaurant URL. Use a six-character code, for example /MEGCHK.'
+        );
+        setConfigLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${FIREBASE_LOCATIONS_URL}/${LOCATION_ID}.json`
+        );
+
+        if (!response.ok) {
+          throw new Error(`Firebase returned HTTP ${response.status}`);
+        }
+
+        const config = await response.json();
+
+        if (!config) {
+          throw new Error(
+            `No restaurant configuration was found for ${LOCATION_ID}.`
+          );
+        }
+
+        if (!canceled) {
+          setRestaurantConfig(config);
+        }
+      } catch (error) {
+        console.warn('Could not load restaurant configuration:', error);
+
+        if (!canceled) {
+          setRestaurantConfig(null);
+          setConfigError(error.message || 'Could not load restaurant configuration.');
+        }
+      } finally {
+        if (!canceled) {
+          setConfigLoading(false);
+        }
+      }
+    };
+
+    loadRestaurantConfig();
+
+    return () => {
+      canceled = true;
+    };
+  }, [LOCATION_ID]);
 
   useEffect(() => {
     alarmAudio.current = new Audio('/alert.mp3');
@@ -815,10 +1087,33 @@ export default function KitchenDashboard() {
     });
   };
 
+  if (configLoading) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'Arial' }}>
+        <h1>HeySue Kitchen Dashboard</h1>
+        <p>Loading restaurant configuration for {LOCATION_ID || 'unknown location'}...</p>
+      </div>
+    );
+  }
+
+  if (configError) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'Arial' }}>
+        <h1>HeySue Kitchen Dashboard</h1>
+        <p style={{ color: '#dc3545', fontWeight: 'bold' }}>{configError}</p>
+        <p>Example URL: http://localhost:3000/MEGCHK</p>
+      </div>
+    );
+  }
+
   if (!audioEnabled) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <h1>Orders and Messages Dashboard</h1>
+        <h1>
+          {restaurantConfig?.restaurantName ||
+            restaurantConfig?.displayName ||
+            `HeySue Kitchen Dashboard - ${LOCATION_ID}`}
+        </h1>
         <p>Please click the button below to start the dashboard and enable sound alerts.</p>
         <p>(c) 2026 HeySue! - All rights reserved.</p>
 
@@ -872,7 +1167,12 @@ export default function KitchenDashboard() {
 
   return (
     <div style={{ padding: '1rem', fontFamily: 'Arial' }}>
-      <h1>Orders and Messages - Mega Chicken - Burlington </h1>
+      <h1>
+        Orders and Messages -{' '}
+        {restaurantConfig?.restaurantName ||
+          restaurantConfig?.displayName ||
+          LOCATION_ID}
+      </h1>
 
       <p>
         <strong>Date:</strong>{' '}
@@ -1187,23 +1487,23 @@ export default function KitchenDashboard() {
                       gap: '0.35rem'
                     }}
                   >
-                    {order.Subtotal !== undefined && order.Subtotal !== '' && (
+                    {(order.backendSubtotal !== undefined || (order.Subtotal !== undefined && order.Subtotal !== '')) && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Subtotal</span>
-                        <span>{formatMoney(order.Subtotal)}</span>
+                        <span>{formatMoney(order.backendSubtotal ?? order.Subtotal)}</span>
                       </div>
                     )}
 
-                    {(order.tax !== undefined || order.Tax !== undefined) && (
+                    {(order.backendTax !== undefined || order.tax !== undefined || order.Tax !== undefined) && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Tax</span>
-                        <span>{formatMoney(order.tax ?? order.Tax)}</span>
+                        <span>{formatMoney(order.backendTax ?? order.tax ?? order.Tax)}</span>
                       </div>
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.7rem' }}>
                       <span>Total</span>
-                      <span>{formatMoney(order['Total Price'])}</span>
+                      <span>{formatMoney(order.backendTotal ?? order['Total Price'])}</span>
                     </div>
                   </div>
                 </div>
@@ -1225,7 +1525,7 @@ export default function KitchenDashboard() {
             </div>
 
             <p style={{ fontSize: '1.6rem', fontWeight: 'bold' }}>
-              <strong>Total:</strong> {order['Total Price']}
+              <strong>Total:</strong> {formatMoney(order.backendTotal ?? order['Total Price'])}
             </p>
 
             {isCreditDebitOrder(order) && PAYMENT_LINK_MODE === 'VOICE' && (
